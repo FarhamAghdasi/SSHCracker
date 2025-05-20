@@ -37,7 +37,7 @@ go mod download
 
 ```bash
 git clone https://github.com/Matrix-Community-ORG/SSHCracker.git
-cd ssh-cracker
+cd SSHCracker
 ```
 
 ### 2. پیکربندی سرور لایسنس

@@ -23,6 +23,13 @@ This tool is for educational and testing purposes only. Always ensure you have p
 - Python 3.7 or higher (for the license server)
 - Git
 
+### Python Dependencies
+
+The license server requires the following Python packages:
+```bash
+pip install flask
+```
+
 ### Go Dependencies
 
 The project uses the following Go packages:

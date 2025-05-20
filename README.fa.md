@@ -36,7 +36,7 @@ go mod download
 ### 1. کلون کردن مخزن
 
 ```bash
-git clone https://github.com/yourusername/ssh-cracker.git
+git clone https://github.com/Matrix-Community-ORG/SSHCracker.git
 cd ssh-cracker
 ```
 

@@ -38,7 +38,7 @@ go mod download
 ### 1. Clone the Repository
 
 ```bash
-git clone https://github.com/yourusername/ssh-cracker.git
+git clone https://github.com/Matrix-Community-ORG/SSHCracker.git
 cd ssh-cracker
 ```
 
@@ -299,7 +299,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## 👨‍💻 Author
 
-- **SudoLite** - *Initial work*
+- **SudoLite**
 
 ## 🙏 Acknowledgments
 

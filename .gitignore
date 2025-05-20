@@ -1,0 +1,49 @@
+# Go specific
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+ssh-cracker
+ssh-cracker.exe
+
+# Keep go.mod and go.sum
+!go.mod
+!go.sum
+
+# Python specific
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Project specific
+data.json
+combo.txt
+su-goods.txt
+*.log
+
+# IDE specific
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store 

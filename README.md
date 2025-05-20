@@ -1,5 +1,7 @@
 # SSH Cracker
 
+[فارسی](README.fa.md) | English
+
 A powerful SSH connection testing tool (SSH-Cracker) written in Go. This tool allows you to test SSH connections with multiple username/password combinations against a list of IP addresses.
 
 ## ⚠️ Disclaimer

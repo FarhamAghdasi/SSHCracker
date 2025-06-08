@@ -1,314 +1,219 @@
-# SSH Cracker
+# 🚀 SSHCracker - Advanced SSH Brute Force Tool
 
-[فارسی](README.fa.md) | English
+[![Go Version](https://img.shields.io/badge/Go-1.18+-00ADD8?style=for-the-badge&logo=go)](https://golang.org/)
+[![License](https://img.shields.io/badge/License-MIT-green.svg?style=for-the-badge)](LICENSE)
+[![Platform](https://img.shields.io/badge/Platform-Linux%20%7C%20Windows%20%7C%20macOS-lightgrey?style=for-the-badge)](https://github.com/)
+[![Release](https://img.shields.io/github/v/release/Matrix-Community-ORG/SSHCracker?style=for-the-badge)](https://github.com/Matrix-Community-ORG/SSHCracker/releases)
 
-A powerful SSH connection testing tool (SSH-Cracker) written in Go. This tool allows you to test SSH connections with multiple username/password combinations against a list of IP addresses.
+A powerful, high-performance SSH brute force tool written in Go with advanced honeypot detection, real-time statistics, and comprehensive system reconnaissance capabilities.
 
-## ⚠️ Disclaimer
+## 🌟 Key Features
 
-This tool is for educational and testing purposes only. Always ensure you have proper authorization before testing any SSH connections. The author is not responsible for any misuse of this tool.
+### 🔥 Core Capabilities
+- **⚡ High-Speed SSH Brute Force** - Multi-threaded concurrent attacks
+- **🍯 Advanced Honeypot Detection (BETA)** - 9 intelligent detection algorithms
+- **📊 Real-Time Dashboard** - Live progress tracking and statistics
+- **🎯 Smart Target Management** - Efficient wordlist and target handling
+- **🔍 Deep System Reconnaissance** - Comprehensive server information gathering
+- **📁 Multiple Output Formats** - Detailed logging and reporting
 
-## 🚀 Features
+### 🛡️ Security & Performance
+- **🚀 Cross-Platform Support** - Linux, Windows, macOS compatibility
+- **⚙️ Configurable Threading** - Adjustable concurrent connections
+- **🔒 No License Requirements** - Completely free and open-source
+- **🎛️ Advanced Configuration** - Timeout, stealth mode, performance tuning
 
-- Multi-threaded SSH connection testing
-- Support for multiple username/password combinations
-- Real-time progress monitoring
-- Discord webhook integration for successful connections
-- Cross-platform support (Windows & Linux)
-- License system for access control
+## 🚀 Quick Start
 
-## 📋 Prerequisites
-
-- Go 1.16 or higher
-- Python 3.7 or higher (for the license server)
-- Git
-
-### Python Dependencies
-
-The license server requires the following Python packages:
+### Option 1: Download Pre-built Binary (Recommended)
 ```bash
-pip install flask
+# Visit releases page and download for your platform:
+# https://github.com/Matrix-Community-ORG/SSHCracker/releases/latest
+
+# Make executable (Linux/macOS):
+chmod +x ssh-cracker-*
+
+# Run:
+./ssh-cracker-*
 ```
 
-### Go Dependencies
-
-The project uses the following Go packages:
-- `golang.org/x/crypto/ssh` - For SSH connection handling
-
-To install dependencies:
+### Option 2: Build from Source
 ```bash
-go mod download
-```
-
-## 🛠️ Installation
-
-### 1. Clone the Repository
-
-```bash
+# Clone repository
 git clone https://github.com/Matrix-Community-ORG/SSHCracker.git
 cd SSHCracker
+
+# Build
+go build ssh.go
+
+# Run
+./ssh
 ```
 
-### 2. Configure the License Server
+## 📋 Usage Guide
 
-1. Edit `app.py` and set your admin password:
-```python
-PASSWORD = 'YOUR_ADMIN_PASSWORD'  # Change this to a secure password
+### Basic Usage
+1. **Launch the tool**: `./ssh-cracker-*`
+2. **Configure inputs**:
+   - Username wordlist file (e.g., `users.txt`)
+   - Password wordlist file (e.g., `passwords.txt`)
+   - Target list file (e.g., `targets.txt`)
+   - Connection timeout (recommended: 5-10 seconds)
+   - Max concurrent connections (recommended: 10-50)
+
+### File Format Examples
+
+**Usernames (`users.txt`)**:
+```
+root
+admin
+administrator
+user
+ubuntu
 ```
 
-2. Start the license server:
+**Passwords (`passwords.txt`)**:
+```
+123456
+password
+admin
+root
+12345678
+```
+
+**Targets (`targets.txt`)**:
+```
+192.168.1.1:22
+10.0.0.1:22
+example.com:2222
+```
+
+## 🍯 Honeypot Detection System (BETA)
+
+Our advanced honeypot detection uses 9 sophisticated algorithms:
+
+| Algorithm | Detection Method |
+|-----------|------------------|
+| **Pattern Recognition** | Known honeypot signatures and artifacts |
+| **Response Time Analysis** | Unusual timing patterns |
+| **Command Behavior** | Abnormal system command responses |
+| **File System Analysis** | Fake or simulated file structures |
+| **Network Configuration** | Suspicious port and service configurations |
+| **Performance Testing** | System performance characteristics |
+| **Anomaly Detection** | Unusual system behaviors |
+| **Service Analysis** | Running processes and services |
+| **Environment Analysis** | System environment variables |
+
+> **⚠️ Note**: Currently in BETA - manual verification recommended for detected honeypots.
+
+## 📊 Output Files
+
+| File | Description |
+|------|-------------|
+| `su-goods.txt` | Successfully cracked SSH credentials |
+| `detailed-results.txt` | Comprehensive scan results with system info |
+| `honeypots.txt` | Detected honeypots with confidence scores |
+| `combo.txt` | Generated credential combinations (temporary) |
+
+## ⚙️ Advanced Configuration
+
+### Performance Modes
+
+**🏃 High-Speed Mode**:
+- Timeout: 3 seconds
+- Max Connections: 50
+- Use for fast networks
+
+**🥷 Stealth Mode**:
+- Timeout: 10 seconds
+- Max Connections: 5
+- Use for careful reconnaissance
+
+## 🔧 Installation Requirements
+
+### Prerequisites
+- **Go**: Version 1.18 or higher
+- **Git**: For cloning (if building from source)
+- **Network Access**: To target systems
+
+### Supported Platforms
+- ✅ Linux (x64, ARM64)
+- ✅ Windows (x64)
+- ✅ macOS (Intel, Apple Silicon)
+
+## 🛠️ Troubleshooting
+
+### Common Issues
 ```bash
-python app.py
+# Permission denied
+chmod +x ssh-cracker-*
+
+# Module errors
+go mod download && go mod tidy
+
+# Too many open files
+ulimit -n 65536
 ```
 
-### 3. Build the SSH Cracker
+### Performance Tips
+- Adjust timeout based on network latency
+- Start with lower connection counts
+- Monitor system resources during scanning
 
-#### For Linux:
-```bash
-go build -o ssh-cracker ssh.go
-```
+## 📱 Community & Support
 
-#### For Windows:
-```bash
-go build -o ssh-cracker.exe ssh.go
-```
+### 🌐 Join Our Communities
+- **English Community**: [@MatrixORG](https://t.me/MatrixORG)
+- **Persian Community**: [@MatrixFa](https://t.me/MatrixFa)
+- **Chat Group**: [@DD0SChat](https://t.me/DD0SChat)
 
-## 🔧 Configuration
+### 💬 Get Help
+1. Check [Issues](https://github.com/Matrix-Community-ORG/SSHCracker/issues)
+2. Join our Telegram communities
+3. Create detailed bug reports
 
-Before running the tool, you need to configure a few things:
+## ⚠️ Legal & Ethical Use
 
-1. Edit `ssh.go` and update the following constants:
-```go
-const (
-    APIEndpoint = "http://your-api-endpoint.com:8000/check-license"
-    WebhookURL  = "https://discord.com/api/webhooks/your-webhook-url"
-)
-```
+**🚨 Important Notice**: This tool is designed for:
+- ✅ Authorized penetration testing
+- ✅ Educational purposes
+- ✅ Security research
+- ✅ Your own systems
 
-2. Create your username and password lists:
-   - Create a file with usernames (one per line)
-   - Create a file with passwords (one per line)
+**❌ DO NOT USE FOR**:
+- Unauthorized access attempts
+- Illegal activities
+- Systems you don't own without permission
 
-## 🚀 Usage
-
-1. Run the program:
-```bash
-# Linux
-./ssh-cracker
-
-# Windows
-ssh-cracker.exe
-```
-
-2. When prompted:
-   - Enter your license key
-   - Provide the path to your username list file
-   - Provide the path to your password list file
-   - Enter the IP list file path
-   - Set the timeout value (in seconds)
-   - Set the maximum number of concurrent connections
-
-3. The program will:
-   - Create a combination file of usernames and passwords
-   - Start testing SSH connections
-   - Display real-time progress
-   - Save successful connections to `su-goods.txt`
-   - Send notifications to Discord (if configured)
-
-## 📊 Output
-
-The program provides real-time information including:
-- Total connections checked
-- Connection speed (IP/s)
-- Elapsed time
-- Remaining time
-- Number of successful connections
-
-Successful connections are saved in `su-goods.txt` in the format:
-```
-IP:PORT@USERNAME:PASSWORD
-```
-
-## 🔒 License System
-
-The tool uses a license system to control access. To create a license:
-
-1. Access the license server API:
-```
-http://your-api-endpoint.com:8000/create-lic?password=YOUR_ADMIN_PASSWORD&name=USER_NAME&expire=DAYS
-```
-
-2. Add IP addresses to the license:
-```
-http://your-api-endpoint.com:8000/add-ip?password=YOUR_ADMIN_PASSWORD&lic=LICENSE_KEY&ip=IP_ADDRESS
-```
-
-## 🔒 License System API Documentation
-
-The license system provides several endpoints for managing licenses and IP addresses. All endpoints require authentication using the admin password.
-
-### Authentication
-All API endpoints require the admin password to be passed as a query parameter:
-```
-?password=YOUR_ADMIN_PASSWORD
-```
-
-### Endpoints
-
-#### 1. Create License
-Creates a new license for a user.
-
-```
-GET /create-lic
-```
-
-Parameters:
-- `password` (required): Admin password
-- `name` (required): User's name
-- `expire` (required): Number of days until license expiration
-
-Response:
-```json
-{
-    "license": "GENERATED_LICENSE_KEY",
-    "name": "USER_NAME",
-    "ip_list": [],
-    "expire": "YYYY-MM-DD"
-}
-```
-
-#### 2. Add IP Address
-Adds an IP address to a license's allowed IP list.
-
-```
-GET /add-ip
-```
-
-Parameters:
-- `password` (required): Admin password
-- `lic` (required): License key
-- `ip` (required): IP address to add
-
-Response:
-```json
-{
-    "message": "IP added successfully"
-}
-```
-
-#### 3. Clear IP List
-Clears all IP addresses from a license's IP list.
-
-```
-GET /clear-ips
-```
-
-Parameters:
-- `password` (required): Admin password
-- `lic` (required): License key
-
-Response:
-```json
-{
-    "message": "IP list cleared successfully"
-}
-```
-
-#### 4. Delete License
-Deletes a license completely.
-
-```
-GET /delete-lic
-```
-
-Parameters:
-- `password` (required): Admin password
-- `lic` (required): License key
-
-Response:
-```json
-{
-    "message": "License deleted successfully"
-}
-```
-
-#### 5. Get All Licenses
-Retrieves information about all licenses.
-
-```
-GET /all
-```
-
-Parameters:
-- `password` (required): Admin password
-
-Response:
-```json
-{
-    "LICENSE_KEY_1": {
-        "name": "USER_NAME",
-        "ip_list": ["IP1", "IP2"],
-        "expire": "YYYY-MM-DD"
-    },
-    "LICENSE_KEY_2": {
-        ...
-    }
-}
-```
-
-#### 6. Check License
-Validates a license and checks if an IP is allowed.
-
-```
-POST /check-license
-```
-
-Request Body:
-```json
-{
-    "lic": "LICENSE_KEY",
-    "ip": "IP_ADDRESS"
-}
-```
-
-Response:
-```json
-{
-    "name": "USER_NAME",
-    "ip_list": ["IP1", "IP2"],
-    "expire": "YYYY-MM-DD"
-}
-```
-
-### Error Codes
-
-- `400`: Bad Request - Missing or invalid parameters
-- `401`: Unauthorized - Invalid admin password
-- `403`: Forbidden - IP not allowed or license expired
-- `404`: Not Found - License not found
-- `409`: Conflict - Name already exists or IP already in list
-
-### Security Notes
-
-1. Always use HTTPS in production
-2. Change the default admin password
-3. Regularly monitor license usage
-4. Implement rate limiting for API endpoints
-5. Keep the server's Python packages updated
+**Users are fully responsible for compliance with applicable laws and regulations.**
 
 ## 🤝 Contributing
 
-Contributions are welcome! Please feel free to submit a Pull Request.
+We welcome contributions! Here's how:
 
-## 📝 License
+1. **Fork** the repository
+2. **Create** your feature branch: `git checkout -b feature/AmazingFeature`
+3. **Commit** your changes: `git commit -m 'Add AmazingFeature'`
+4. **Push** to branch: `git push origin feature/AmazingFeature`
+5. **Open** a Pull Request
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+## 📄 License
 
-## 👨‍💻 Author
+This project is licensed under the **MIT License** - see [LICENSE](LICENSE) for details.
 
-- **SudoLite**
+## 🏆 Acknowledgments
 
-## 🙏 Acknowledgments
+- **Matrix Community** - Development and maintenance
+- **Go Community** - Excellent SSH libraries
+- **Security Researchers** - Honeypot detection algorithms
+- **Contributors** - Bug reports and feature requests
 
-- Thanks to all contributors
-- Inspired by the need for efficient SSH connection testing 
+---
+
+<div align="center">
+
+**⭐ Star this project if you find it useful! ⭐**
+
+Made with ❤️ by [Matrix Community](https://github.com/Matrix-Community-ORG)
+
+</div>

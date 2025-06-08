@@ -1,7 +1,7 @@
-module github.com/yourusername/ssh-cracker
+module github.com/Matrix-Community-ORG/SSHCracker
 
-go 1.16
+go 1.21
 
-require (
-	golang.org/x/crypto v0.0.0-20220622213112-05595931fe9d
-)
+require golang.org/x/crypto v0.17.0
+
+require golang.org/x/sys v0.15.0 // indirect

@@ -1,0 +1,176 @@
+name: Build and Release
+
+on:
+  push:
+    branches: [ main, master ]
+    tags: [ 'v*' ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        goos: [linux, windows, darwin]
+        goarch: [amd64, arm64]
+        exclude:
+          - goos: windows
+            goarch: arm64
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: '1.21'
+
+    - name: Get dependencies
+      run: go mod download
+
+    - name: Build binary
+      env:
+        GOOS: ${{ matrix.goos }}
+        GOARCH: ${{ matrix.goarch }}
+      run: |
+        # Create output directory
+        mkdir -p dist
+        
+        # Set binary name based on OS
+        if [ "$GOOS" = "windows" ]; then
+          BINARY_NAME="ssh-cracker-$GOOS-$GOARCH.exe"
+        else
+          BINARY_NAME="ssh-cracker-$GOOS-$GOARCH"
+        fi
+        
+        # Build the binary
+        go build -ldflags="-s -w" -o dist/$BINARY_NAME ssh.go
+        
+        # Make it executable (for non-Windows)
+        if [ "$GOOS" != "windows" ]; then
+          chmod +x dist/$BINARY_NAME
+        fi
+
+    - name: Upload artifacts
+      uses: actions/upload-artifact@v3
+      with:
+        name: ssh-cracker-${{ matrix.goos }}-${{ matrix.goarch }}
+        path: dist/
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
+    
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Download all artifacts
+      uses: actions/download-artifact@v3
+      with:
+        path: artifacts
+
+    - name: Create release directory
+      run: |
+        mkdir -p release
+        find artifacts -name "ssh-cracker-*" -type f -exec cp {} release/ \;
+        ls -la release/
+
+    - name: Generate release tag
+      id: tag
+      run: |
+        if [[ $GITHUB_REF == refs/tags/* ]]; then
+          echo "tag=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+        else
+          echo "tag=latest-$(date +'%Y%m%d-%H%M%S')" >> $GITHUB_OUTPUT
+        fi
+
+    - name: Create Release
+      id: create_release
+      uses: actions/create-release@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        tag_name: ${{ steps.tag.outputs.tag }}
+        release_name: SSH Cracker ${{ steps.tag.outputs.tag }}
+        body: |
+          ## 🚀 Advanced SSH Brute Force Tool
+          
+          ### ✨ New in this release:
+          - Enhanced honeypot detection with 9 sophisticated algorithms
+          - Real-time statistics and progress tracking
+          - Comprehensive system information gathering
+          - Multi-platform support (Linux, Windows, macOS)
+          - No license requirements - free and open source
+          
+          ### 📦 Downloads:
+          - **Linux (AMD64)**: `ssh-cracker-linux-amd64`
+          - **Linux (ARM64)**: `ssh-cracker-linux-arm64`
+          - **Windows (AMD64)**: `ssh-cracker-windows-amd64.exe`
+          - **macOS (AMD64)**: `ssh-cracker-darwin-amd64`
+          - **macOS (ARM64)**: `ssh-cracker-darwin-arm64`
+          
+          ### 🛠️ Quick Start:
+          1. Download the appropriate binary for your platform
+          2. Make it executable: `chmod +x ssh-cracker-*` (Linux/macOS)
+          3. Run: `./ssh-cracker-*`
+          
+          ### ⚠️ Legal Notice:
+          This tool is for educational and authorized penetration testing only.
+          Always ensure you have explicit permission before testing any systems.
+          
+          ---
+          **Full Changelog**: See commits since last release
+        draft: false
+        prerelease: false
+
+    - name: Upload Linux AMD64
+      uses: actions/upload-release-asset@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ steps.create_release.outputs.upload_url }}
+        asset_path: ./release/ssh-cracker-linux-amd64
+        asset_name: ssh-cracker-linux-amd64
+        asset_content_type: application/octet-stream
+
+    - name: Upload Linux ARM64
+      uses: actions/upload-release-asset@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ steps.create_release.outputs.upload_url }}
+        asset_path: ./release/ssh-cracker-linux-arm64
+        asset_name: ssh-cracker-linux-arm64
+        asset_content_type: application/octet-stream
+
+    - name: Upload Windows AMD64
+      uses: actions/upload-release-asset@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ steps.create_release.outputs.upload_url }}
+        asset_path: ./release/ssh-cracker-windows-amd64.exe
+        asset_name: ssh-cracker-windows-amd64.exe
+        asset_content_type: application/octet-stream
+
+    - name: Upload macOS AMD64
+      uses: actions/upload-release-asset@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ steps.create_release.outputs.upload_url }}
+        asset_path: ./release/ssh-cracker-darwin-amd64
+        asset_name: ssh-cracker-darwin-amd64
+        asset_content_type: application/octet-stream
+
+    - name: Upload macOS ARM64
+      uses: actions/upload-release-asset@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ steps.create_release.outputs.upload_url }}
+        asset_path: ./release/ssh-cracker-darwin-arm64
+        asset_name: ssh-cracker-darwin-arm64
+        asset_content_type: application/octet-stream

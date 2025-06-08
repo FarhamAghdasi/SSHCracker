@@ -6,8 +6,24 @@
 *.dylib
 *.test
 *.out
+
+# Binary files
+ssh
 ssh-cracker
 ssh-cracker.exe
+SSHCracker
+SSHCracker.exe
+
+# Test files
+*.txt
+!go.mod
+!go.sum
+
+# Temporary files
+combo.txt
+su-goods.txt
+detailed-results.txt
+honeypots.txt
 
 # Keep go.mod and go.sum
 !go.mod

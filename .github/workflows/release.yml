@@ -82,7 +82,7 @@ jobs:
         fi
 
     - name: Upload artifacts
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: ssh-cracker-${{ matrix.goos }}-${{ matrix.goarch }}
         path: dist/
@@ -104,9 +104,11 @@ jobs:
         echo "Custom tag: ${{ github.event.inputs.custom_tag }}"
 
     - name: Download all artifacts
-      uses: actions/download-artifact@v3
+      uses: actions/download-artifact@v4
       with:
         path: artifacts
+        pattern: ssh-cracker-*
+        merge-multiple: true
 
     - name: Create release directory
       run: |
@@ -138,12 +140,10 @@ jobs:
 
     - name: Create Release
       id: create_release
-      uses: actions/create-release@v1
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      uses: ncipollo/release-action@v1
       with:
-        tag_name: ${{ steps.tag.outputs.tag }}
-        release_name: |
+        tag: ${{ steps.tag.outputs.tag }}
+        name: |
           ${{ github.event.inputs.release_type == 'release' && '🚀 SSHCracker' || 
               github.event.inputs.release_type == 'pre-release' && '🧪 SSHCracker (Pre-release)' || 
               '🔧 SSHCracker (Development)' }} ${{ steps.tag.outputs.tag }}
@@ -194,55 +194,7 @@ jobs:
           
           ---
           **Full Changelog**: See commits since last release
+        artifacts: "release/*"
+        token: ${{ secrets.GITHUB_TOKEN }}
         draft: false
         prerelease: ${{ github.event.inputs.release_type == 'pre-release' || github.event.inputs.release_type == 'development' }}
-
-    - name: Upload Linux AMD64
-      uses: actions/upload-release-asset@v1
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      with:
-        upload_url: ${{ steps.create_release.outputs.upload_url }}
-        asset_path: ./release/ssh-cracker-linux-amd64
-        asset_name: ssh-cracker-linux-amd64
-        asset_content_type: application/octet-stream
-
-    - name: Upload Linux ARM64
-      uses: actions/upload-release-asset@v1
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      with:
-        upload_url: ${{ steps.create_release.outputs.upload_url }}
-        asset_path: ./release/ssh-cracker-linux-arm64
-        asset_name: ssh-cracker-linux-arm64
-        asset_content_type: application/octet-stream
-
-    - name: Upload Windows AMD64
-      uses: actions/upload-release-asset@v1
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      with:
-        upload_url: ${{ steps.create_release.outputs.upload_url }}
-        asset_path: ./release/ssh-cracker-windows-amd64.exe
-        asset_name: ssh-cracker-windows-amd64.exe
-        asset_content_type: application/octet-stream
-
-    - name: Upload macOS AMD64
-      uses: actions/upload-release-asset@v1
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      with:
-        upload_url: ${{ steps.create_release.outputs.upload_url }}
-        asset_path: ./release/ssh-cracker-darwin-amd64
-        asset_name: ssh-cracker-darwin-amd64
-        asset_content_type: application/octet-stream
-
-    - name: Upload macOS ARM64
-      uses: actions/upload-release-asset@v1
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      with:
-        upload_url: ${{ steps.create_release.outputs.upload_url }}
-        asset_path: ./release/ssh-cracker-darwin-arm64
-        asset_name: ssh-cracker-darwin-arm64
-        asset_content_type: application/octet-stream

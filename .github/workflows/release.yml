@@ -27,6 +27,12 @@ on:
         required: false
         type: string
 
+permissions:
+  contents: write
+  packages: write
+  actions: read
+  security-events: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -140,7 +146,9 @@ jobs:
 
     - name: Create Release
       id: create_release
-      uses: ncipollo/release-action@v1
+      uses: ncipollo/release-action@v1.16.0
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       with:
         tag: ${{ steps.tag.outputs.tag }}
         name: |
@@ -195,6 +203,5 @@ jobs:
           ---
           **Full Changelog**: See commits since last release
         artifacts: "release/*"
-        token: ${{ secrets.GITHUB_TOKEN }}
         draft: false
         prerelease: ${{ github.event.inputs.release_type == 'pre-release' || github.event.inputs.release_type == 'development' }}

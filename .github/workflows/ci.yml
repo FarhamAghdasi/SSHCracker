@@ -13,6 +13,11 @@ on:
         default: 'false'
         type: boolean
 
+permissions:
+  contents: read
+  actions: read
+  security-events: write
+
 jobs:
   test:
     runs-on: ubuntu-latest

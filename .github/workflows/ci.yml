@@ -5,6 +5,13 @@ on:
     branches: [ main, master ]
   pull_request:
     branches: [ main, master ]
+  workflow_dispatch:
+    inputs:
+      debug_enabled:
+        description: 'Enable debug mode'
+        required: false
+        default: 'false'
+        type: boolean
 
 jobs:
   test:
@@ -17,6 +24,12 @@ jobs:
       uses: actions/setup-go@v4
       with:
         go-version: '1.21'
+
+    - name: Print workflow trigger info
+      run: |
+        echo "Workflow triggered by: ${{ github.event_name }}"
+        echo "Branch: ${{ github.ref_name }}"
+        echo "Debug mode: ${{ github.event.inputs.debug_enabled }}"
 
     - name: Get dependencies
       run: go mod download
@@ -32,6 +45,19 @@ jobs:
 
     - name: Run tests
       run: go test -v ./... || echo "No tests found"
+
+    - name: Debug information
+      if: ${{ github.event.inputs.debug_enabled == 'true' }}
+      run: |
+        echo "=== Debug Information ==="
+        echo "Go version: $(go version)"
+        echo "Current directory: $(pwd)"
+        echo "Files in directory:"
+        ls -la
+        echo "Go modules:"
+        go list -m all
+        echo "Environment variables:"
+        env | grep -E "(GO|PATH)" | sort
 
     - name: Run staticcheck
       uses: dominikh/staticcheck-action@v1.3.0

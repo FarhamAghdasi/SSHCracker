@@ -6,6 +6,26 @@ on:
     tags: [ 'v*' ]
   pull_request:
     branches: [ main, master ]
+  workflow_dispatch:
+    inputs:
+      release_type:
+        description: 'Type of release'
+        required: true
+        default: 'development'
+        type: choice
+        options:
+        - development
+        - pre-release
+        - release
+      create_release:
+        description: 'Create GitHub release'
+        required: false
+        default: false
+        type: boolean
+      custom_tag:
+        description: 'Custom tag for release (optional)'
+        required: false
+        type: string
 
 jobs:
   build:
@@ -20,6 +40,15 @@ jobs:
 
     steps:
     - uses: actions/checkout@v4
+
+    - name: Print workflow trigger info
+      run: |
+        echo "Workflow triggered by: ${{ github.event_name }}"
+        echo "Branch: ${{ github.ref_name }}"
+        echo "Release type: ${{ github.event.inputs.release_type }}"
+        echo "Create release: ${{ github.event.inputs.create_release }}"
+        echo "Custom tag: ${{ github.event.inputs.custom_tag }}"
+        echo "Building for: ${{ matrix.goos }}/${{ matrix.goarch }}"
 
     - name: Set up Go
       uses: actions/setup-go@v4
@@ -61,10 +90,18 @@ jobs:
   release:
     needs: build
     runs-on: ubuntu-latest
-    if: startsWith(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
+    if: startsWith(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master' || github.event.inputs.create_release == 'true'
     
     steps:
     - uses: actions/checkout@v4
+
+    - name: Print release info
+      run: |
+        echo "Creating release..."
+        echo "Event: ${{ github.event_name }}"
+        echo "Ref: ${{ github.ref }}"
+        echo "Release type: ${{ github.event.inputs.release_type }}"
+        echo "Custom tag: ${{ github.event.inputs.custom_tag }}"
 
     - name: Download all artifacts
       uses: actions/download-artifact@v3
@@ -80,11 +117,24 @@ jobs:
     - name: Generate release tag
       id: tag
       run: |
-        if [[ $GITHUB_REF == refs/tags/* ]]; then
+        if [[ "${{ github.event.inputs.custom_tag }}" != "" ]]; then
+          echo "tag=${{ github.event.inputs.custom_tag }}" >> $GITHUB_OUTPUT
+        elif [[ $GITHUB_REF == refs/tags/* ]]; then
           echo "tag=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
         else
-          echo "tag=latest-$(date +'%Y%m%d-%H%M%S')" >> $GITHUB_OUTPUT
+          case "${{ github.event.inputs.release_type }}" in
+            "release")
+              echo "tag=v$(date +'%Y.%m.%d')" >> $GITHUB_OUTPUT
+              ;;
+            "pre-release")
+              echo "tag=v$(date +'%Y.%m.%d')-pre" >> $GITHUB_OUTPUT
+              ;;
+            *)
+              echo "tag=dev-$(date +'%Y%m%d-%H%M%S')" >> $GITHUB_OUTPUT
+              ;;
+          esac
         fi
+        echo "Generated tag: $(cat $GITHUB_OUTPUT | grep tag= | cut -d= -f2)"
 
     - name: Create Release
       id: create_release
@@ -93,37 +143,59 @@ jobs:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       with:
         tag_name: ${{ steps.tag.outputs.tag }}
-        release_name: SSH Cracker ${{ steps.tag.outputs.tag }}
+        release_name: |
+          ${{ github.event.inputs.release_type == 'release' && '🚀 SSHCracker' || 
+              github.event.inputs.release_type == 'pre-release' && '🧪 SSHCracker (Pre-release)' || 
+              '🔧 SSHCracker (Development)' }} ${{ steps.tag.outputs.tag }}
         body: |
           ## 🚀 Advanced SSH Brute Force Tool
           
-          ### ✨ New in this release:
-          - Enhanced honeypot detection with 9 sophisticated algorithms
-          - Real-time statistics and progress tracking
-          - Comprehensive system information gathering
-          - Multi-platform support (Linux, Windows, macOS)
-          - No license requirements - free and open source
+          **Release Type:** ${{ github.event.inputs.release_type || 'automatic' }}  
+          **Build Date:** $(date +'%Y-%m-%d %H:%M:%S UTC')  
+          **Triggered by:** ${{ github.event_name }}
           
-          ### 📦 Downloads:
-          - **Linux (AMD64)**: `ssh-cracker-linux-amd64`
-          - **Linux (ARM64)**: `ssh-cracker-linux-arm64`
-          - **Windows (AMD64)**: `ssh-cracker-windows-amd64.exe`
-          - **macOS (AMD64)**: `ssh-cracker-darwin-amd64`
-          - **macOS (ARM64)**: `ssh-cracker-darwin-arm64`
+          ### ✨ Key Features:
+          - 🍯 **Advanced Honeypot Detection (BETA)** - 9 sophisticated algorithms
+          - 📊 **Real-time Dashboard** - Live progress tracking and statistics
+          - 🔍 **Deep System Reconnaissance** - Comprehensive server information
+          - 🚀 **Multi-platform Support** - Linux, Windows, macOS compatibility
+          - ⚡ **High Performance** - Multi-threaded concurrent attacks
+          - 🛡️ **No License Requirements** - Completely free and open source
+          
+          ### 📱 Community:
+          - 🌐 **English Community**: [@MatrixORG](https://t.me/MatrixORG)
+          - 🇮🇷 **Persian Community**: [@MatrixFa](https://t.me/MatrixFa)
+          - 💬 **Chat Group**: [@DD0SChat](https://t.me/DD0SChat)
+          
+          ### 📦 Available Downloads:
+          | Platform | Architecture | File |
+          |----------|-------------|------|
+          | 🐧 Linux | AMD64 | `ssh-cracker-linux-amd64` |
+          | 🐧 Linux | ARM64 | `ssh-cracker-linux-arm64` |
+          | 🪟 Windows | AMD64 | `ssh-cracker-windows-amd64.exe` |
+          | 🍎 macOS | Intel | `ssh-cracker-darwin-amd64` |
+          | 🍎 macOS | Apple Silicon | `ssh-cracker-darwin-arm64` |
           
           ### 🛠️ Quick Start:
-          1. Download the appropriate binary for your platform
-          2. Make it executable: `chmod +x ssh-cracker-*` (Linux/macOS)
-          3. Run: `./ssh-cracker-*`
+          1. **Download** the appropriate binary for your platform
+          2. **Make executable** (Linux/macOS): `chmod +x ssh-cracker-*`
+          3. **Run**: `./ssh-cracker-*`
+          4. **Follow** the interactive setup prompts
           
-          ### ⚠️ Legal Notice:
-          This tool is for educational and authorized penetration testing only.
-          Always ensure you have explicit permission before testing any systems.
+          ### 📖 Documentation:
+          - [English README](README.md)
+          - [Persian README](README.fa.md)
+          - [GitHub Repository](https://github.com/Matrix-Community-ORG/SSHCracker)
+          
+          ### ⚠️ Legal & Ethical Use:
+          This tool is designed for **authorized penetration testing**, **educational purposes**, 
+          and **security research** only. Always ensure you have explicit permission before 
+          testing any systems you do not own.
           
           ---
           **Full Changelog**: See commits since last release
         draft: false
-        prerelease: false
+        prerelease: ${{ github.event.inputs.release_type == 'pre-release' || github.event.inputs.release_type == 'development' }}
 
     - name: Upload Linux AMD64
       uses: actions/upload-release-asset@v1

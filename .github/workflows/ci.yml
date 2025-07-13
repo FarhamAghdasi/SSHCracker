@@ -1,4 +1,4 @@
-name: CI - SSHCracker v2.5
+name: CI - SSHCracker v2.6
 
 on:
   push:

